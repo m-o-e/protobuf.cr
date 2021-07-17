@@ -290,6 +290,30 @@ module Protobuf
           if message_type = @file.message_type
             message_type.each { |mt| message!(mt) }
           end
+          if service = @file.service
+            service.each do |service|
+              # puts "abstract class #{service.name}" # pkg_namspace?
+              # puts "abstract class ProtobufServiceInterface; end" # pkg_namspace?
+              puts "abstract class #{service.name}Interface < ProtobufServiceInterface" # pkg_namspace?
+              # puts nil
+              indent do
+                # puts "include GRPC::Service"
+                # puts
+                # puts %{@@service_name = "#{package_name}.#{service.name}"}
+                # puts
+                if method = service.method
+                  method.each do |m|
+                    input_type = m.input_type.not_nil!.split('.').map(&.camelcase).join("::")
+                    output_type = m.output_type.not_nil!.split('.').map(&.camelcase).join("::")
+                    puts "abstract def #{m.name.not_nil!.downcase}(request : #{input_type}) : #{output_type}"
+                  end
+                end
+              end
+              puts "end"
+              # puts "class #{service.name} < #{service.name}Interface; end"
+
+            end
+          end
         end
       end
     end
@@ -398,6 +422,36 @@ module Protobuf
       end
       puts field_desc
     end
+
+    def service!(message_type)
+      puts nil
+
+      # guard against recursive structs
+      structure = !message_type.field.nil? && message_type.field.not_nil!.any? { |f| f.type_name && f.type_name.not_nil!.split(".").last == message_type.name } ? "class" : "struct"
+
+      puts "#{structure} #{message_type.name}"
+
+      indent do
+        puts "include ::Protobuf::Message"
+        message_type.enum_type.not_nil!.each { |et| enum!(et) } unless message_type.enum_type.nil?
+        message_type.nested_type.not_nil!.each { |mt| message!(mt) } unless message_type.nested_type.nil?
+        puts nil
+
+        # use contract3() macro for proto3, otherwise use contract() macro
+
+        syntax = @file.syntax.nil? ? "proto2" : @file.syntax
+
+        unless message_type.field.nil?
+          puts "contract_of \"#{syntax}\" do"
+          indent do
+            message_type.field.not_nil!.each { |f| field!(f, syntax) } unless message_type.field.nil?
+          end
+          puts "end"
+        end
+      end
+      puts "end"
+    end
+
 
     def indent
       @indentation += 1
